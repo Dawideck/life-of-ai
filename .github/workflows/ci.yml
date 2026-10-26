@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Parts of the repo appear milestone by milestone; only run what exists.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      engine: ${{ steps.d.outputs.engine }}
+      web: ${{ steps.d.outputs.web }}
+      worlds: ${{ steps.d.outputs.worlds }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: d
+        run: |
+          echo "engine=$([ -f engine/pyproject.toml ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "web=$([ -f web/package.json ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "worlds=$(ls worlds/*.json >/dev/null 2>&1 && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  schemas:
+    name: Schemas and worlds
+    needs: detect
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Schemas are valid JSON Schema
+        run: uvx check-jsonschema --check-metaschema schema/world.schema.json schema/log.schema.json
+      - name: Worlds validate against world schema
+        if: needs.detect.outputs.worlds == 'true'
+        run: uvx check-jsonschema --schemafile schema/world.schema.json worlds/*.json
+
+  engine:
+    name: Engine (Python)
+    needs: detect
+    if: needs.detect.outputs.engine == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-extras
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
+
+  web:
+    name: Web (TypeScript)
+    needs: detect
+    if: needs.detect.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: web/playwright-report
+          retention-days: 7
