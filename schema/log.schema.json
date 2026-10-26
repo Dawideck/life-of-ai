@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lifeofai.adnered.net/schema/log.schema.json",
+  "title": "life-of-ai log line",
+  "description": "Schema for ONE line of runs/<run_id>/log.jsonl. Line order: run_start, then per session: session_start, step*, session_end; finally run_end (may be missing if the process was killed). Coordinates are z-up [x, y, z].",
+  "type": "object",
+  "required": ["type", "run_id", "ts"],
+  "properties": {
+    "type": { "enum": ["run_start", "session_start", "step", "session_end", "run_end"] },
+    "run_id": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,64}$" },
+    "ts": { "type": "string", "format": "date-time" }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/runStart" },
+    { "$ref": "#/$defs/sessionStart" },
+    { "$ref": "#/$defs/step" },
+    { "$ref": "#/$defs/sessionEnd" },
+    { "$ref": "#/$defs/runEnd" }
+  ],
+  "$defs": {
+    "pos3": { "type": "array", "items": { "type": "integer" }, "minItems": 3, "maxItems": 3 },
+    "direction": { "enum": ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] },
+    "common": {
+      "type": "object",
+      "required": ["type", "run_id", "ts"],
+      "properties": {
+        "type": true,
+        "run_id": true,
+        "ts": true
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_tokens", "output_tokens"],
+      "properties": {
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "cache_read_tokens": { "type": ["integer", "null"], "minimum": 0 },
+        "duration_ms": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "agentState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pos", "holding", "facing"],
+      "properties": {
+        "pos": { "$ref": "#/$defs/pos3" },
+        "holding": { "type": ["string", "null"] },
+        "facing": { "$ref": "#/$defs/direction" }
+      }
+    },
+    "objectState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "color", "pos", "lost"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string" },
+        "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "pos": {
+          "description": "Position when on the ground or in a stack. When held: the agent's position. When lost: last position before loss.",
+          "$ref": "#/$defs/pos3"
+        },
+        "held": { "type": "boolean" },
+        "lost": { "type": "boolean" }
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["agent", "objects", "max_height"],
+      "properties": {
+        "agent": { "$ref": "#/$defs/agentState" },
+        "objects": { "type": "array", "items": { "$ref": "#/$defs/objectState" } },
+        "max_height": { "type": "integer", "description": "Highest z the agent has stood on this session." }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": ["object_lost", "object_landed", "object_picked_up", "object_placed", "new_max_height", "reached_landmark", "notes_written"]
+        },
+        "object": { "type": "string" },
+        "at": { "$ref": "#/$defs/pos3" },
+        "from": { "$ref": "#/$defs/pos3" },
+        "height": { "type": "integer" },
+        "landmark": { "type": "string" },
+        "chars": { "type": "integer" }
+      }
+    },
+    "runStart": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "required": ["type", "schema_version", "provider", "model", "soul", "world", "config"],
+      "properties": {
+        "type": { "const": "run_start" },
+        "run_id": true,
+        "ts": true,
+        "schema_version": { "const": 1 },
+        "engine_version": { "type": "string" },
+        "provider": { "enum": ["mock", "ollama", "openai_compat", "anthropic"] },
+        "model": { "type": "string" },
+        "soul": { "type": "string", "description": "Exact soul text used for this run." },
+        "world": {
+          "description": "The full world definition as loaded (must validate against world.schema.json). Makes the log self-contained.",
+          "type": "object"
+        },
+        "config": {
+          "type": "object",
+          "description": "Run settings: sessions, steps, context window, num_ctx, seed, limits.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "sessionStart": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "required": ["type", "session", "state", "notes"],
+      "properties": {
+        "type": { "const": "session_start" },
+        "run_id": true,
+        "ts": true,
+        "session": { "type": "integer", "minimum": 1 },
+        "state": { "$ref": "#/$defs/state" },
+        "notes": { "type": "string", "description": "Notes at the start of the session." }
+      },
+      "additionalProperties": false
+    },
+    "step": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "required": ["type", "session", "step", "agent_text", "thinking", "action", "result", "events", "state", "usage"],
+      "properties": {
+        "type": { "const": "step" },
+        "run_id": true,
+        "ts": true,
+        "session": { "type": "integer", "minimum": 1 },
+        "step": { "type": "integer", "minimum": 1 },
+        "phase": { "enum": ["play", "wrap_up"], "description": "wrap_up = the end-of-session notes turn." },
+        "agent_text": { "type": "string", "description": "Visible text the model wrote this turn. May be empty." },
+        "thinking": { "type": ["string", "null"], "description": "Separate reasoning trace if the model returns one." },
+        "action": {
+          "description": "null when the model called no tool this turn.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["tool", "args"],
+              "properties": {
+                "tool": { "type": "string" },
+                "args": { "type": "object" }
+              }
+            }
+          ]
+        },
+        "result": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ok", "message"],
+              "properties": {
+                "ok": { "type": "boolean" },
+                "message": { "type": "string" }
+              }
+            }
+          ]
+        },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/event" } },
+        "state": { "$ref": "#/$defs/state", "description": "Full snapshot AFTER the action." },
+        "usage": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/usage" }] }
+      },
+      "additionalProperties": false
+    },
+    "sessionEnd": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "required": ["type", "session", "reason", "notes", "stats"],
+      "properties": {
+        "type": { "const": "session_end" },
+        "run_id": true,
+        "ts": true,
+        "session": { "type": "integer", "minimum": 1 },
+        "reason": { "enum": ["max_steps", "max_minutes", "max_tokens", "provider_error", "interrupted"] },
+        "notes": { "type": "string", "description": "Notes after the wrap-up turn." },
+        "stats": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "steps": { "type": "integer" },
+            "invalid_actions": { "type": "integer" },
+            "max_height": { "type": "integer" },
+            "objects_lost": { "type": "integer" },
+            "input_tokens": { "type": "integer" },
+            "output_tokens": { "type": "integer" }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "runEnd": {
+      "allOf": [{ "$ref": "#/$defs/common" }],
+      "type": "object",
+      "required": ["type", "reason", "totals"],
+      "properties": {
+        "type": { "const": "run_end" },
+        "run_id": true,
+        "ts": true,
+        "reason": { "enum": ["completed", "limit", "provider_error", "interrupted", "error"] },
+        "totals": { "type": "object", "additionalProperties": true }
+      },
+      "additionalProperties": false
+    }
+  }
+}

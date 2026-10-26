@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lifeofai.adnered.net/schema/world.schema.json",
+  "title": "life-of-ai world definition",
+  "description": "What exists in a world. Behaviour of each property is implemented by the engine (see docs/decisions/0006). Coordinates are z-up [x, y, z]; grids are indexed [y][x], row 0 = north edge.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "name", "size", "terrain", "types", "objects", "agent", "rules"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "size": {
+      "description": "[width (x), depth (y)] in cells.",
+      "type": "array",
+      "items": { "type": "integer", "minimum": 4, "maximum": 128 },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "terrain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["heights", "ocean"],
+      "properties": {
+        "heights": {
+          "description": "Terrain height per cell, indexed [y][x]. Must match size.",
+          "type": "array",
+          "items": { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 64 } }
+        },
+        "ocean": {
+          "description": "true = ocean cell (objects landing here are lost, agent cannot enter). Indexed [y][x].",
+          "type": "array",
+          "items": { "type": "array", "items": { "type": "boolean" } }
+        }
+      }
+    },
+    "landmarks": {
+      "description": "Named points shown to the agent and the viewer, e.g. Peak, Spire. Value is [x, y, z] where z is the top surface height.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/pos3" }
+    },
+    "types": {
+      "description": "Object types keyed by type id.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/id" },
+      "additionalProperties": { "$ref": "#/$defs/objectType" }
+    },
+    "objects": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/objectInstance" }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "spawn"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "spawn": {
+          "description": "[x, y]; z is taken from the surface height at that cell.",
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "color": { "$ref": "#/$defs/color" },
+        "carry_capacity": { "type": "integer", "const": 1 }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_step_up", "max_jump_up", "max_jump_gap", "max_throw_power", "notes_max_chars"],
+      "properties": {
+        "max_step_up": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "max_jump_up": { "type": "integer", "minimum": 0, "maximum": 6 },
+        "max_jump_gap": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "max_throw_power": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "notes_max_chars": { "type": "integer", "minimum": 500, "maximum": 50000 }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+    "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+    "pos3": {
+      "type": "array",
+      "items": { "type": "integer" },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "objectType": {
+      "description": "MVP property set. Every property here has a rule in the engine; add new ones only together with their rule.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "shape", "color", "carryable", "solid", "stackable_on_top", "weight"],
+      "properties": {
+        "description": { "type": "string", "description": "Shown to the agent and viewer. Never interpreted by the engine." },
+        "shape": { "enum": ["box", "sphere", "torus", "cylinder"], "description": "Viewer rendering hint only." },
+        "color": { "$ref": "#/$defs/color", "description": "Default colour; instances may override." },
+        "color_name": { "type": "string", "description": "Human name of the default colour, used in observations." },
+        "carryable": { "type": "boolean", "description": "Can be picked up, placed and thrown." },
+        "solid": { "type": "boolean", "description": "The agent can stand on it." },
+        "stackable_on_top": { "type": "boolean", "description": "Other objects can be placed on top of it." },
+        "weight": { "type": "integer", "minimum": 1, "maximum": 5, "description": "Throw distance = floor(power / weight), minimum 1." }
+      }
+    },
+    "objectInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "pos"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "$ref": "#/$defs/id" },
+        "pos": { "$ref": "#/$defs/pos3" },
+        "color": { "$ref": "#/$defs/color" },
+        "color_name": { "type": "string" }
+      }
+    }
+  }
+}

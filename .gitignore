@@ -1,0 +1,41 @@
+# Secrets and local env — never commit
+.env
+.env.*
+!.env.example
+.envrc
+*.pem
+*.key
+id_*
+*_deploy
+*_deploy.pub
+
+# Experiment output (logs are published deliberately, never committed by accident)
+runs/
+engine/runs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Node / web
+node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+web/blob-report/
+.vite/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
